@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dokumentasi Tebak Tidur</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+        }
+
+        code {
+            background-color: #f8f9fa;
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            color: #e83e8c;
+        }
+
+        pre {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border: 1px solid #ddd;
+        }
+
+        .explanation {
+            background-color: #e8f4fc;
+            padding: 15px;
+            border-left: 5px solid #3498db;
+            margin: 20px 0;
+        }
+
+        .library-card {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+        }
+
+        .library-name {
+            font-weight: bold;
+            font-size: 1.1em;
+            color: #2980b9;
+        }
+
+        footer {
+            margin-top: 50px;
+            text-align: center;
+            color: #777;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Dokumentasi: Tebak Jam Tidur via Python</h1>
+
+    <p>Script <code>tebak_tidur.py</code> ini berfungsi untuk menebak pola tidur pengguna berdasarkan histori penggunaan
+        laptop (kapan mati/sleep dan kapan nyala kembali).</p>
+
+    <div class="explanation">
+        <strong>Cara Kerja Singkat:</strong><br>
+        Script ini tidak "memasang alat penyadap". Sebaliknya, ia hanya membaca <strong>Windows Event Logs</strong> yang
+        sudah ada di sistem laptop Anda, khususnya event yang mencatat kapan laptop tertidur (Sleep/Shutdown) dan
+        terbangun (Wake/Boot).
+    </div>
+
+    <h2>Mengapa Menggunakan Library Ini?</h2>
+
+    <p>Berikut adalah alasan pemilihan library (modul) yang digunakan dalam script ini:</p>
+
+    <div class="library-card">
+        <div class="library-name">1. subprocess</div>
+        <p><strong>Fungsi:</strong> Menjalankan perintah terminal/PowerShell dari dalam Python.</p>
+        <p><strong>Kenapa pakai ini?</strong></p>
+        <ul>
+            <li><strong>Tanpa Install Tambahan:</strong> Kita tidak perlu menginstall library eksternal yang ribet
+                seperti <code>pywin32</code>. modul <code>subprocess</code> adalah bawaan Python.</li>
+            <li><strong>PowerShell Lebih Kuat:</strong> Mengakses Event Log Windows via PowerShell
+                (<code>Get-WinEvent</code>) sangat powerful dan fleksibel tanpa perlu low-level coding C++ atau API
+                Windows yang rumit.</li>
+        </ul>
+    </div>
+
+    <div class="library-card">
+        <div class="library-name">2. json</div>
+        <p><strong>Fungsi:</strong> Mengolah data teks menjadi format object/dictionary Python.</p>
+        <p><strong>Kenapa pakai ini?</strong></p>
+        <ul>
+            <li><strong>Output Bersih:</strong> PowerShell diperintahkan untuk mengeluarkan data dalam format JSON
+                (<code>ConvertTo-Json</code>). Python sangat mudah membaca format ini dibanding harus memotong-motong
+                (parsing) teks biasa secara manual.</li>
+        </ul>
+    </div>
+
+    <div class="library-card">
+        <div class="library-name">3. datetime & timedelta</div>
+        <p><strong>Fungsi:</strong> Mengelola waktu dan tanggal.</p>
+        <p><strong>Kenapa pakai ini?</strong></p>
+        <ul>
+            <li><strong>Hitung Durasi:</strong> Kita perlu menghitung selisih waktu (durasi) antara laptop mati dan
+                nyala. Library ini membuatnya sangat mudah (tinggal <code>waktu_b - waktu_a</code>).</li>
+            <li><strong>Format Tanggal:</strong> Membantu mengubah timestamp komputer yang aneh menjadi format yang bisa
+                dibaca manusia (contoh: "Senin, 03 Feb 23:00").</li>
+        </ul>
+    </div>
+
+    <h2>Logika Code (Algorithm)</h2>
+
+    <p>Proses penebakan dilakukan dengan langkah-langkah berikut:</p>
+
+    <ol>
+        <li><strong>Ambil Data (Extract):</strong>
+            Script menjalankan PowerShell untuk mencari Event ID tertentu:
+            <ul>
+                <li><code>42</code>: Kernel-Power (Sleep)</li>
+                <li><code>1074/6006</code>: Shutdown (Mati)</li>
+                <li><code>1/6005</code>: Wake/Boot (Nyala)</li>
+            </ul>
+        </li>
+        <li><strong>Urutkan (Sort):</strong>
+            Data diurutkan berdasarkan waktu kejadian.
+        </li>
+        <li><strong>Cari Celah (Analyze Gaps):</strong>
+            Script mencari jarak waktu (gap) antar event.
+            <pre>Jarak = Waktu Event Sekarang - Waktu Event Sebelumnya</pre>
+        </li>
+        <li><strong>Filter (Heuristics):</strong>
+            Tidak semua laptop mati berarti tidur. Script menggunakan aturan:
+            <ul>
+                <li>Durasi mati harus <strong>lebih dari 4 jam</strong>.</li>
+                <li>Waktu mulai mati harus di jam "wajar" tidur (Malam hari) <strong>ATAU</strong> waktu nyala di pagi
+                    hari.</li>
+            </ul>
+        </li>
+        <li><strong>Hitung Rata-rata:</strong>
+            Menghitung rata-rata jam tidur dan jam bangun dari data yang valid.
+        </li>
+    </ol>
+
+    <h2>Contoh Output</h2>
+
+    <pre>
+HARI       | TANGGAL      | TIDUR    -> BANGUN   | DURASI    
+-----------------------------------------------------------------
+Senin      | 03 Feb       | 23:15    -> 07:30    | 8.2 jam   
+Selasa     | 04 Feb       | 00:45    -> 08:15    | 7.5 jam</pre>
+
+    <footer>
+        <p>Santaiworks</p>
+    </footer>
+
+</body>
+
+</html>
