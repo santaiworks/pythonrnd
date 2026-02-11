@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html><head><meta charset='utf-8'><title>ASCII Art Generator Docs</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 24px; line-height: 1.6; }
+      h1 { font-size: 24px; margin-bottom: 8px; }
+      h2 { font-size: 20px; margin-top: 24px; }
+      pre { background: #f5f5f5; padding: 12px; overflow: auto; }
+      .fn { border-left: 4px solid #ccc; padding-left: 12px; margin-bottom: 16px; }
+      .meta { color: #333; }
+    </style>
+    </head><body>
+<h1>ASCII Art Generator Docs</h1>
+<h2>Application Overview</h2>
+<p class='meta'>Aplikasi mengubah gambar grayscale menjadi ASCII art. Contoh tanpa dependency menggunakan format PGM (P2). Jika Pillow tersedia, dapat memproses PNG/JPG.</p>
+<h2>How It Works</h2>
+<p class='meta'>Pipeline: baca piksel → ubah ukuran untuk rasio karakter → peta ke karakter ASCII → simpan. PGM (P2) dibaca manual, sedangkan format lain menggunakan Pillow bila ada.</p>
+<h2>Functions</h2>
+<div class='fn'>
+<h3>read_pgm</h3>
+<pre>Purpose
+Membaca file gambar grayscale berformat PGM ASCII (P2) dan mengembalikan
+matriks piksel beserta lebar dan tinggi.
+
+Parameters
+path: Lokasi file PGM (format P2, ASCII).
+
+Return value
+(pixels, width, height) di mana pixels adalah list 2D berisi nilai 0–255.</pre>
+<details><summary>Code Snippet</summary>
+<pre>def read_pgm(path: str) -> Tuple[List[List[int]], int, int]:
+    """Purpose
+    Membaca file gambar grayscale berformat PGM ASCII (P2) dan mengembalikan
+    matriks piksel beserta lebar dan tinggi.
+    
+    Parameters
+    path: Lokasi file PGM (format P2, ASCII).
+    
+    Return value
+    (pixels, width, height) di mana pixels adalah list 2D berisi nilai 0–255.
+    """
+    tokens: List[str] = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            tokens.extend(line.split())
+    if not tokens or tokens[0] != "P2":
+        raise ValueError("File PGM harus berformat ASCII P2")
+    idx = 1
+    width = int(tokens[idx]); idx += 1
+    height = int(tokens[idx]); idx += 1
+    maxval = int(tokens[idx]); idx += 1
+    if maxval <= 0:
+        raise ValueError("Nilai maxval tidak valid pada PGM")
+    expected = width * height
+    values = list(map(int, tokens[idx:idx + expected]))
+    if len(values) != expected:
+        raise ValueError("Jumlah piksel tidak sesuai dimensi PGM")
+    pixels: List[List[int]] = []
+    for r in range(height):
+        row = values[r * width:(r + 1) * width]
+        pixels.append(row)
+    return pixels, width, height</pre>
+</details>
+</div>
+<div class='fn'>
+<h3>resize_pixels</h3>
+<pre>Purpose
+Mengubah ukuran matriks piksel secara sederhana (nearest-neighbor) agar
+cocok untuk render ASCII pada lebar tertentu.
+
+Parameters
+pixels: Matriks piksel 2D bernilai 0–255.
+new_width: Lebar baru yang diinginkan untuk ASCII art.
+
+Return value
+Matriks piksel 2D yang telah diubah ukurannya.</pre>
+<details><summary>Code Snippet</summary>
+<pre>def resize_pixels(pixels: List[List[int]], new_width: int) -> List[List[int]]:
+    """Purpose
+    Mengubah ukuran matriks piksel secara sederhana (nearest-neighbor) agar
+    cocok untuk render ASCII pada lebar tertentu.
+    
+    Parameters
+    pixels: Matriks piksel 2D bernilai 0–255.
+    new_width: Lebar baru yang diinginkan untuk ASCII art.
+    
+    Return value
+    Matriks piksel 2D yang telah diubah ukurannya.
+    """
+    if new_width < 1:
+        raise ValueError("new_width minimal 1")
+    orig_h = len(pixels)
+    orig_w = len(pixels[0]) if orig_h > 0 else 0
+    if orig_w == 0 or orig_h == 0:
+        return []
+    scale = new_width / float(orig_w)
+    # Koreksi rasio tinggi karakter (karakter biasanya lebih tinggi daripada lebar)
+    new_height = max(1, int(orig_h * scale * 0.5))
+    resized: List[List[int]] = []
+    for y in range(new_height):
+        src_y = min(orig_h - 1, int(y / new_height * orig_h))
+        row: List[int] = []
+        for x in range(new_width):
+            src_x = min(orig_w - 1, int(x / new_width * orig_w))
+            row.append(pixels[src_y][src_x])
+        resized.append(row)
+    return resized</pre>
+</details>
+</div>
+<div class='fn'>
+<h3>map_to_ascii</h3>
+<pre>Purpose
+Memetakan nilai grayscale 0–255 menjadi karakter ASCII sesuai palet yang
+disediakan, lalu menghasilkan baris-baris teks.
+
+Parameters
+pixels: Matriks piksel 2D bernilai 0–255.
+charset: String palet karakter dari gelap ke terang.
+
+Return value
+List baris string yang mewakili ASCII art.</pre>
+<details><summary>Code Snippet</summary>
+<pre>def map_to_ascii(pixels: List[List[int]], charset: str = " .:-=+*#%@") -> List[str]:
+    """Purpose
+    Memetakan nilai grayscale 0–255 menjadi karakter ASCII sesuai palet yang
+    disediakan, lalu menghasilkan baris-baris teks.
+    
+    Parameters
+    pixels: Matriks piksel 2D bernilai 0–255.
+    charset: String palet karakter dari gelap ke terang.
+    
+    Return value
+    List baris string yang mewakili ASCII art.
+    """
+    if not pixels:
+        return []
+    if len(charset) < 2:
+        raise ValueError("charset minimal 2 karakter")
+    lines: List[str] = []
+    scale = (len(charset) - 1) / 255.0
+    for row in pixels:
+        line_chars = []
+        for v in row:
+            idx = int(v * scale)
+            line_chars.append(charset[idx])
+        lines.append("".join(line_chars))
+    return lines</pre>
+</details>
+</div>
+<div class='fn'>
+<h3>save_ascii</h3>
+<pre>Purpose
+Menyimpan ASCII art ke file teks.
+
+Parameters
+lines: List baris ASCII art.
+output_path: Lokasi file output teks.
+
+Return value
+None</pre>
+<details><summary>Code Snippet</summary>
+<pre>def save_ascii(lines: List[str], output_path: str) -> None:
+    """Purpose
+    Menyimpan ASCII art ke file teks.
+    
+    Parameters
+    lines: List baris ASCII art.
+    output_path: Lokasi file output teks.
+    
+    Return value
+    None
+    """
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))</pre>
+</details>
+</div>
+<div class='fn'>
+<h3>image_to_ascii</h3>
+<pre>Purpose
+Pipeline yang mengubah gambar menjadi ASCII art. Mendukung PGM (P2) tanpa
+dependency, dan mencoba menggunakan Pillow untuk format lain bila tersedia.
+
+Parameters
+input_path: Lokasi file gambar (PGM P2 direkomendasikan untuk contoh).
+output_path: Lokasi file teks output ASCII.
+width: Lebar ASCII art yang diinginkan.
+
+Return value
+String ASCII art yang juga disimpan ke output_path.</pre>
+<details><summary>Code Snippet</summary>
+<pre>def image_to_ascii(input_path: str, output_path: str, width: int = 80) -> str:
+    """Purpose
+    Pipeline yang mengubah gambar menjadi ASCII art. Mendukung PGM (P2) tanpa
+    dependency, dan mencoba menggunakan Pillow untuk format lain bila tersedia.
+    
+    Parameters
+    input_path: Lokasi file gambar (PGM P2 direkomendasikan untuk contoh).
+    output_path: Lokasi file teks output ASCII.
+    width: Lebar ASCII art yang diinginkan.
+    
+    Return value
+    String ASCII art yang juga disimpan ke output_path.
+    """
+    ext = os.path.splitext(input_path.lower())[1]
+    if ext == ".pgm":
+        pixels, w, h = read_pgm(input_path)
+    else:
+        try:
+            from PIL import Image  # type: ignore
+        except Exception as e:
+            raise RuntimeError(
+                "Format non-PGM memerlukan Pillow. Instal 'Pillow' atau gunakan .pgm."
+            ) from e
+        img = Image.open(input_path).convert("L")
+        w, h = img.size
+        pixels = [list(img.crop((0, y, w, y + 1)).getdata()) for y in range(h)]
+    resized = resize_pixels(pixels, width)
+    ascii_lines = map_to_ascii(resized)
+    save_ascii(ascii_lines, output_path)
+    return "\n".join(ascii_lines)</pre>
+</details>
+</div>
+</body></html>
