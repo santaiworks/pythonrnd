@@ -74,6 +74,8 @@ def build_html(title: str, overview: str, how_it_works: str, functions: List[Dic
         "<li><b>--dither</b>: Aktifkan dithering untuk detail di lebar kecil</li>",
         "<li><b>--clarity</b>: Tingkatkan kejelasan (CLAHE + sharpen)</li>",
         "<li><b>--fit</b>: Sesuaikan lebar otomatis dengan lebar terminal</li>",
+        "<li><b>--face</b>: Deteksi wajah dan tingkatkan area wajah</li>",
+        "<li><b>--face-strong</b>: Mode wajah lebih agresif</li>",
         "</ul>",
         "<h2>Functions</h2>",
     ]
