@@ -8,6 +8,52 @@ from typing import List, Tuple
 import os
 import shutil
 
+def pil_to_pixels(img) -> List[List[int]]:
+    """Purpose
+    Mengonversi objek PIL Image (mode L) menjadi matriks 2D nilai piksel 0–255
+    tanpa menggunakan API yang deprecated.
+    
+    Parameters
+    img: Objek PIL Image yang sudah dikonversi ke grayscale (mode 'L').
+    
+    Return value
+    Matriks piksel 2D bernilai 0–255 dengan ukuran (height x width).
+    """
+    w, h = img.size
+    px = img.load()
+    rows: List[List[int]] = []
+    for y in range(h):
+        row = [px[x, y] for x in range(w)]
+        rows.append(row)
+    return rows
+
+def enhance_image(img, sharpen: bool = False, equalize: bool = False, edge_blend: bool = False):
+    """Purpose
+    Meningkatkan kejelasan gambar grayscale dengan opsi penajaman, equalize,
+    dan pencampuran tepi.
+    
+    Parameters
+    img: Objek PIL Image mode 'L'.
+    sharpen: Aktifkan penajaman (UnsharpMask).
+    equalize: Aktifkan histogram equalization.
+    edge_blend: Campur peta tepi untuk menonjolkan kontur.
+    
+    Return value
+    Objek PIL Image yang telah ditingkatkan.
+    """
+    try:
+        from PIL import Image as PilImage, ImageFilter, ImageOps  # type: ignore
+    except Exception:
+        return img
+    out = img
+    if equalize:
+        out = ImageOps.equalize(out)
+    if sharpen:
+        out = out.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
+    if edge_blend:
+        edges = out.filter(ImageFilter.FIND_EDGES)
+        out = ImageOps.autocontrast(PilImage.blend(out, edges, alpha=0.25))
+    return out
 
 def read_pgm(path: str) -> Tuple[List[List[int]], int, int]:
     """Purpose
@@ -66,6 +112,34 @@ def resize_pixels(pixels: List[List[int]], new_width: int) -> List[List[int]]:
         return []
     scale = new_width / float(orig_w)
     new_height = max(1, int(orig_h * scale * 0.43))
+    resized: List[List[int]] = []
+    for y in range(new_height):
+        src_y = min(orig_h - 1, int(y / new_height * orig_h))
+        row: List[int] = []
+        for x in range(new_width):
+            src_x = min(orig_w - 1, int(x / new_width * orig_w))
+            row.append(pixels[src_y][src_x])
+        resized.append(row)
+    return resized
+
+def resize_pixels_to_size(pixels: List[List[int]], new_width: int, new_height: int) -> List[List[int]]:
+    """Purpose
+    Mengubah ukuran matriks piksel ke dimensi tertentu menggunakan nearest-neighbor.
+    
+    Parameters
+    pixels: Matriks piksel 2D bernilai 0–255.
+    new_width: Lebar baru.
+    new_height: Tinggi baru.
+    
+    Return value
+    Matriks piksel 2D yang telah diubah ukurannya ke (new_height x new_width).
+    """
+    if new_width < 1 or new_height < 1:
+        raise ValueError("new_width dan new_height minimal 1")
+    orig_h = len(pixels)
+    orig_w = len(pixels[0]) if orig_h > 0 else 0
+    if orig_w == 0 or orig_h == 0:
+        return []
     resized: List[List[int]] = []
     for y in range(new_height):
         src_y = min(orig_h - 1, int(y / new_height * orig_h))
@@ -203,6 +277,9 @@ def image_to_ascii(
     gamma: float = 1.0,
     invert: bool = False,
     dither: bool = False,
+    height: int | None = None,
+    clarity: bool = False,
+    auto_invert: bool = False,
 ) -> str:
     """Purpose
     Pipeline yang mengubah gambar menjadi ASCII art. Mendukung PGM (P2) tanpa
@@ -223,7 +300,10 @@ def image_to_ascii(
     ext = os.path.splitext(input_path.lower())[1]
     if ext == ".pgm":
         pixels, w, h = read_pgm(input_path)
-        resized = resize_pixels(pixels, width)
+        if height is not None:
+            resized = resize_pixels_to_size(pixels, width, height)
+        else:
+            resized = resize_pixels(pixels, width)
     else:
         try:
             from PIL import Image, ImageOps  # type: ignore
@@ -233,10 +313,17 @@ def image_to_ascii(
             ) from e
         img = Image.open(input_path).convert("L")
         w, h = img.size
-        new_h = max(1, int(h * (width / float(w)) * 0.43))
+        new_h = height if height is not None else max(1, int(h * (width / float(w)) * 0.43))
         img = ImageOps.autocontrast(img)
+        if clarity:
+            img = enhance_image(img, sharpen=True, equalize=True, edge_blend=True)
         img = img.resize((width, new_h), resample=Image.BILINEAR)
-        resized = [list(img.crop((0, y, width, y + 1)).getdata()) for y in range(new_h)]
+        resized = pil_to_pixels(img)
+        if auto_invert:
+            total = sum(sum(row) for row in resized)
+            count = len(resized) * len(resized[0]) if resized else 1
+            mean = total / (255.0 * count)
+            invert = invert or (mean > 0.55)
     ascii_lines = map_to_ascii(resized, charset=charset, gamma=gamma, invert=invert, dither=dither)
     save_ascii(ascii_lines, output_path)
     return "\n".join(ascii_lines)
@@ -272,6 +359,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--charset", type=str, default=" .:-=+*#%@", help="Palet karakter atau kata kunci: simple|dense"
     )
+    parser.add_argument(
+        "--height", type=int, default=None, help="Tinggi ASCII art (override perhitungan rasio)"
+    )
+    parser.add_argument(
+        "--compact", action="store_true", help="Gunakan charset kompak tanpa spasi"
+    )
+    parser.add_argument(
+        "--clarity", action="store_true", help="Tingkatkan detail (equalize + sharpen + edge blend)"
+    )
+    parser.add_argument(
+        "--auto-invert", action="store_true", help="Balik terang-gelap otomatis bila gambar terlalu terang"
+    )
     args = parser.parse_args()
     script_dir = os.path.dirname(__file__)
     in_path = args.input
@@ -288,6 +387,8 @@ if __name__ == "__main__":
         charset = " .:-=+*#%@"
     elif charset.lower() == "dense":
         charset = " .'`^\",:;Il!i~+_-?][}{1)(|\\/*tfjrxnczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$"
+    if args.compact:
+        charset = ".:;Il!i~+_-?][}{1)(|/*tfjrxnczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$"
     art = image_to_ascii(
         in_path,
         args.output,
@@ -296,6 +397,9 @@ if __name__ == "__main__":
         gamma=args.gamma,
         invert=args.invert,
         dither=args.dither,
+        height=args.height,
+        clarity=args.clarity,
+        auto_invert=args.auto_invert,
     )
     print(art)
 
