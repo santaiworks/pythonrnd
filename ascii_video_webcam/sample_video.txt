@@ -1,0 +1,2 @@
+video_path=sample.mp4
+note=Letakkan file video kecil bernama sample.mp4 di folder ini untuk uji coba.
